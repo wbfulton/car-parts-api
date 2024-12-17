@@ -1,13 +1,13 @@
 {
-    "editor.defaultFormatter": "charliermarsh.ruff",
-    "editor.formatOnSave": true,
-    "editor.codeActionsOnSave": {
-        "source.organizeImports": "explicit",
-    },
-    "editor.rulers": [
-        88
-    ],
     "[python]": {
-        "editor.defaultFormatter": "charliermarsh.ruff"
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit",
+             "source.fixAll": "explicit"
+        },
+        "editor.rulers": [
+            88
+        ],
     },
 }

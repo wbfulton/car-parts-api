@@ -9,7 +9,7 @@ PartNumber = Annotated[
     StringConstraints(
         min_length=11,
         max_length=11,
-        pattern="^\d{5}-\d{5}$",
+        pattern="^\d{5}-[A-Za-z0-9]{4,7}$",
     ),
 ]
 

@@ -51,6 +51,6 @@ async def update_parts_model(newModel: PartsModel) -> Union[PartsModel, None]:
     return newModel
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.delete("/", status_code=status.HTTP_201_CREATED)
 async def delete_parts_model() -> Union[PartsModel, None]:
     return None
