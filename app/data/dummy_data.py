@@ -30,10 +30,11 @@ dummy_parts_data: list[Part] = [
     },
 ]
 
-dummy__part_models_data: list[PartsModel] = [
+dummy_part_models_data: list[PartsModel] = [
     {
         "id": uuid4(),
         "name": "Air Filter",
+        "description": "paper air filter",
         "category": "",
         "parts": [id1],
     },
