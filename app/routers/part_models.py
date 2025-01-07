@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.data.dummy_data import dummy_part_models_data
+from app.database.dummy_data import dummy_part_models_data
 from app.models.parts_model import PartsModel
 
 path_tag = "/parts-model"
