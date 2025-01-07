@@ -1,10 +1,18 @@
-from enum import Enum
-from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator, Optional
+from urllib.parse import parse_qs, urlsplit
 
 from bs4 import BeautifulSoup
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from seleniumbase import Driver
 
+from app.routers.utils import (
+    SouqPartCategoryNames,
+    SouqToolsUrlPath,
+    build_url,
+    get_category_id,
+    get_category_ssd,
+)
 from app.schemas.souq import (
     Everything,
     SouqDiagram,
@@ -17,130 +25,68 @@ from app.schemas.souq import (
 
 path_tag = "/souq"
 
+
 router = APIRouter(
     prefix=path_tag,
     tags=[path_tag],
 )
 
 
-class SouqToolsUrlPath(str, Enum):
-    categories = "/en/catalog/genuine/vehicle/"
-    search = "/en/search/all/"
-    groups = "/en/catalog/genuine/groups/"
-    group_diagram = "/en/catalog/genuine/parts"
-    diagram = "/en/catalog/genuine/unit/"
+class DriverManager:
+    _instance: Optional[Driver] = None
+
+    @classmethod
+    def get_driver(cls) -> Driver:
+        if cls._instance is None:
+            if cls._instance is not None:
+                cls._instance.quit()
+            cls._instance = Driver(uc=True, headless=False)
+        return cls._instance
+
+    @classmethod
+    def quit(cls):
+        if cls._instance is not None:
+            cls._instance.quit()
+            cls._instance = None
 
 
-class SouqPartCategoryNames(str, Enum):
-    Body_Interior = "Body/Interior"
-    Engine = "Engine/Fuel/Tool"
-    Power_Train_Chassis = "Power Train/Chassis"
-    Electrical = "Electrical"
+@router.on_event("startup")
+async def startup_event():
+    DriverManager.get_driver()
 
 
-class SouqPartCategorySsds(str, Enum):
-    Body_Interior = "$*KwGCtqev2eXR7dKE79ObiNrO7un3homEhZe4i8PF9uL--vj7vqmF78HFwfDm_-6otb-Ci_r2_vWW97uysuP05JeBgYbKh6eAksWUjZLrlJjLhNmKgsvJxtjS9JLFmNOTjJeSho-F3dLLkp2WldnFlI7Jxavx4_f6kp2WloSE2YqRlOLq-4eE2avW9__m8vvwlJjJxY3Tk4yX3sTa2MXH2dbY0pWKkYfJAAAAANxDhqI=$"
-    Engine = "$*KwGlkYCI_sL2yvWjyPS8r_3pyc7Qoa6jorCfrOTi0cXZ3d_cmY6iyObi5tfB2MmPkpilrN3R2dKx0JyVlcTTw7CmpqHtoICnteKzqrXMs7_so_6tp-zu4f_107Xiv_S0q7C1oaii-vXstbqxsv7is6nu4ozWxNDdtbqxsaOj_q22s8XN3KCj_ozx0NjB1dzXs7_u4qr0tKuw-eP9_-Lg_vH_9bKttqDuAAAAAGoSyS8=$"
-    Power_Train_Chassis = "$*KwE6Dh8XYV1pVWo8V2sjMGJ2VlFPPjE8PS8AM3t9TlpGQkBDBhE9V3l9eUheR1YQDQc6M0JORk0uTwMKCltMXC85OT5yPx84Kn0sNSpTLCBzPGEyO3NxfmBqTCp9IGsrNC8qPjc9ZWpzKiUuLWF9LDZxfRNJW09CKiUuLjw8YTIpLFpSQz88YRNuT0deSkNILCBxfTVrKzQvZnxiYH1_YW5gai0yKT9xAAAAADut90o=$"
-    Electrical = "$*KwE4DB0VY19rV2g-VWkhMmB0VFNNPDM-Py0CMXl_TFhEQEJBBBM_VXt_e0pcRVQSDwU4MUBMRE8sTQEICFlOXi07OzxwPR06KH8uNyhRLiJxPmMwP3FzfGJoTih_ImkpNi0oPDU_Z2hxKCcsL2N_LjRzfxFLWU1AKCcsLD4-YzArLlhQQT0-YxFsTUVcSEFKLiJzfzdpKTYtZH5gYn99Y2xiaC8wKz1zAAAAAOeXifk=$"
+@router.on_event("shutdown")
+def shutdown_event():
+    DriverManager.quit()
 
 
-class SouqPartCategoryIds(int, Enum):
-    Body_Interior = 3
-    Engine = 1
-    Power_Train_Chassis = 2
-    Electrical = 4
-
-
-def get_category_id(cat_name: SouqPartCategoryNames):
-    if cat_name == SouqPartCategoryNames.Body_Interior:
-        return SouqPartCategoryIds.Engine
-    if cat_name == SouqPartCategoryNames.Body_Interior:
-        return SouqPartCategoryIds.Power_Train_Chassis
-    if cat_name == SouqPartCategoryNames.Power_Train_Chassis:
-        return SouqPartCategoryIds.Body_Interior
-    if cat_name == SouqPartCategoryNames.Electrical:
-        return SouqPartCategoryIds.Electrical
-
-
-def get_category_ssd(cat_name: SouqPartCategoryNames):
-    if cat_name == SouqPartCategoryNames.Body_Interior:
-        return SouqPartCategorySsds.Engine
-    if cat_name == SouqPartCategoryNames.Body_Interior:
-        return SouqPartCategorySsds.Power_Train_Chassis
-    if cat_name == SouqPartCategoryNames.Power_Train_Chassis:
-        return SouqPartCategorySsds.Body_Interior
-    if cat_name == SouqPartCategoryNames.Electrical:
-        return SouqPartCategorySsds.Electrical
-
-
-def get_category_name(cat_id: SouqPartCategoryIds):
-    if cat_id == SouqPartCategoryIds.Body_Interior:
-        return SouqPartCategoryNames.Engine
-    if cat_id == SouqPartCategoryIds.Body_Interior:
-        return SouqPartCategoryNames.Power_Train_Chassis
-    if cat_id == SouqPartCategoryIds.Power_Train_Chassis:
-        return SouqPartCategoryNames.Body_Interior
-    if cat_id == SouqPartCategoryIds.Electrical:
-        return SouqPartCategoryNames.Electrical
-
-
-base_category_query: SouqQuery = {
-    "c": "TOYOTA00",
-    "ssd": "$*KwEcKDkxR3tPc0wacU0FFkRQcHdpGBcaGwkmFV1baHxgZGZlIDcbcV9bX254YXA2KyEcFWRoYGsIaSUsLH1qegkfHxhUGTkeDFsKEwx1CgZVGkcUHFVXWEZMagxbBk0NEgkMGBEbQ0xVDAMIC0dbChBXWzVvfWlkDAMICBoaRxQPCnx0ZRkaRzVIaWF4bGVuCgZXWxNNDRIJQFpERltZR0hGTAsUDxlXAAAAAA5ZBL4=$",
-    "vid": "0",
-    "cid": "",
-    "cname": "",
-    "q": "",
-}
-
-base_group_query: SouqQuery = {
-    "c": "TOYOTA00",
-    "ssd": "$*KwEpHQwEck56RnkvRHgwI3FlRUJcLSIvLjwTIGhuXUlVUVNQFQIuRGpualtNVEUDHhQpIFFdVV49XBAZGUhfTzwqKi1hLAwrOW4_JjlAPzNgL3IhK2BibnN5XzluM3J-PyYqNj95KyhyITgsLSsuPzNgJT45ID8tKikrLXUDcmZka3V_WmY9IS9yITo_KyIrKSpybnw7OHRoOSA9PRINAlpXPzA7OHB8YHZwOU9HVioqLVNvCx5LX1ZdOTY9PTQvciE6c2l3djE_YCo5fzgnPCpnAAAAALIWi4w=$",
-    "vid": "0",
-    "cid": "2",
-    "q": "",
-}
-
-electical_cat_query: SouqQuery = {
-    "c": "TOYOTA00",
-    "ssd": "$*KwEpHQwEck56RnkvRHgwI3FlRUJcLSIvLjwTIGhuXUlVUVNQFQIuRGpualtNVEUDHhQpIFFdVV49XBAZGUhfTzwqKi1hLAwrOW4_JjlAPzNgL3IhK2BibnN5XzluM3J-PyYqNj95KyhyITgsLSsuPzNgJT45ID8tKikrLXUDcmZka3V_WmY9IS9yITo_KyIrKSpybnw7OHRoOSA9PRINAlpXPzA7OHB8YHZwOU9HVioqLVNvCx5LX1ZdOTY9PTQvciE6c2l3djE_YCo5fzgnPCpnAAAAALIWi4w=$",
-    "vid": "0",
-    "cid": "2",
-    "q": "",
-}
-
-
-SCHEME = "https"
-NETLOC = "partsouq.com"
-
-souq_base_url = f"{SCHEME}://{NETLOC}"
-
-
-def build_souq_url(
-    path: SouqToolsUrlPath,
-    query: SouqQuery | None = None,
-):
-    encoded_query = urlencode(query)
-    return urlunsplit((SCHEME, NETLOC, path, encoded_query, ""))
+@asynccontextmanager
+async def get_selenium_driver() -> AsyncGenerator[Driver, None]:
+    try:
+        driver = DriverManager.get_driver()
+        yield driver
+    except Exception as e:
+        DriverManager.quit()
+        raise e
 
 
 @router.get("/")
 async def get_everything_by_category(
-    part_category: SouqPartCategoryNames,
+    part_category: SouqPartCategoryNames, driver: Driver = Depends(get_selenium_driver)
 ) -> Everything:
-    # get categories
-    # get diagrams in each category
-    # get parts in each diagram
     diagrams: list[SouqDiagram] = []
     parts: list[SouqPart] = []
-    cat_diagrams = await get_category_diagrams(part_category=part_category)
+
+    # Pass the driver to the helper functions
+    cat_diagrams = await get_category_diagrams(
+        part_category=part_category, driver=driver
+    )
+
     for diagram in cat_diagrams:
         diagrams.append(diagram)
-        diagram_parts = await get_diagram_parts(souq_diagram=diagram)
-        for part in diagram_parts:
-            parts.append(part)
-    # get parts in each diagram
+        diagram_parts = await get_diagram_parts(souq_diagram=diagram, driver=driver)
+        parts.extend(diagram_parts)
+
     return {"part_category": part_category, "diagrams": diagrams, "parts": parts}
 
 
@@ -171,170 +117,159 @@ async def get_all_group_diagram_parts(
 
 
 @router.get("/part-groups")
-async def get_part_groups() -> dict[str, list[SouqPartGroup]]:
-    # initialize the driver in GUI mode with UC enabled
-    driver = Driver(uc=True, headless=False)
-    url = build_souq_url(SouqToolsUrlPath.groups, base_group_query)
-    # open URL with a 6-second reconnect time to bypass the initial JS challenge
+async def get_part_groups(
+    driver: Driver = Depends(get_selenium_driver),
+) -> dict[str, list[SouqPartGroup]]:
+    group_query: SouqQuery = {
+        "c": "TOYOTA00",
+        "ssd": "$*KwEpHQwEck56RnkvRHgwI3FlRUJcLSIvLjwTIGhuXUlVUVNQFQIuRGpualtNVEUDHhQpIFFdVV49XBAZGUhfTzwqKi1hLAwrOW4_JjlAPzNgL3IhK2BibnN5XzluM3J-PyYqNj95KyhyITgsLSsuPzNgJT45ID8tKikrLXUDcmZka3V_WmY9IS9yITo_KyIrKSpybnw7OHRoOSA9PRINAlpXPzA7OHB8YHZwOU9HVioqLVNvCx5LX1ZdOTY9PTQvciE6c2l3djE_YCo5fzgnPCpnAAAAALIWi4w=$",
+        "vid": "0",
+        "cid": "2",  # fix this
+        "q": "",
+    }
+
+    url = build_url(SouqToolsUrlPath.groups, group_query)
     driver.uc_open_with_reconnect(url, reconnect_time=6)
 
     soup = BeautifulSoup(driver.page_source, "html5lib")
-    diagrams_data: list[SouqPartGroup] = []
-
-    tbody = soup.find(
+    groups_table = soup.find(
         "table", class_="table-mage table table-bordered- table-stripped tree"
-    ).contents[0]  # go through recursively
-    for row in tbody.contents[1:]:
-        name = row.get_text().strip()
-        classes: list[str] = row.attrs["class"]
-        group_number = list(
-            filter(
-                lambda class_string: "treegrid-" in class_string
-                and "treegrid-parent-" not in class_string,
-                classes,
-            )
-        )
-        group_number = group_number[0].split("-")[-1].strip()
+    )
+    groups_data: list[SouqPartGroup] = []
 
-        parent_arr = list(
-            filter(
-                lambda class_string: "treegrid-" in class_string
-                and "treegrid-parent-" in class_string,
-                classes,
-            )
-        )
-        parent_group_number = (
-            None
-            if parent_arr is None or len(parent_arr) == 0
-            else parent_arr[0].split("-")[-1].strip()
+    for row in groups_table.contents[0].contents[1:]:
+        group_name = row.get_text().strip()
+        css_classes: list[str] = row.attrs["class"]
+
+        # Extract group number
+        group_number = next(
+            (
+                cls.split("-")[-1].strip()
+                for cls in css_classes
+                if "treegrid-" in cls and "treegrid-parent-" not in cls
+            ),
+            None,
         )
 
-        a_tag = row.find("a")
+        # Extract parent group number
+        parent_number = next(
+            (
+                cls.split("-")[-1].strip()
+                for cls in css_classes
+                if "treegrid-parent-" in cls
+            ),
+            None,
+        )
 
-        car = None
-        souq_gid = None
-        ssd = None
+        # Extract link data if exists
+        link = row.find("a")
+        if link:
+            diagram_url = build_url(link["href"])
+            url_params = parse_qs(urlsplit(diagram_url)[3])
+            car = url_params["c"][0]
+            group_id = url_params["gid"][0]
+            ssd = url_params["ssd"][0]
+        else:
+            car = group_id = ssd = None
 
-        if a_tag is not None:
-            diagram_url = souq_base_url + row.find("a").get_attribute_list("href")[0]
-
-            souq_deets = parse_qs(urlsplit(diagram_url)[3])
-
-            # query
-            car = souq_deets["c"][0]
-            souq_gid = souq_deets["gid"][0]
-            ssd = souq_deets["ssd"][0]
-
-        diagrams_data.append(
+        groups_data.append(
             {
-                "name": name,
+                "name": group_name,
                 "group_number": group_number,
-                "parent_group_number": parent_group_number,
-                "souq_gid": souq_gid,
+                "parent_group_number": parent_number,
+                "souq_gid": group_id,
                 "car": car,
                 "ssd": ssd,
             }
         )
 
-    # close the browser
-    driver.quit()
+    # Group by parent
+    grouped_data: dict[str, list[SouqPartGroup]] = {}
+    for group in groups_data:
+        parent = group["parent_group_number"] or "0"
+        if parent not in grouped_data:
+            grouped_data[parent] = []
+        grouped_data[parent].append(group)
 
-    # create map
-    parent_map: dict[str, list[SouqPartGroup]] = dict({})
-    for diagram in diagrams_data:
-        parent = diagram["parent_group_number"]
-        if parent is None:
-            parent = "0"
-
-        if parent not in parent_map:
-            parent_map[parent] = [diagram]
-        else:
-            parent_map[parent].append(diagram)
-
-    return parent_map
+    return grouped_data
 
 
 @router.post("/group-diagram-parts")
 async def get_group_diagram_parts(
-    souq_diagram: SouqPartGroup,
+    souq_diagram: SouqPartGroup, _driver: Driver = Depends(get_selenium_driver)
 ) -> list[SouqGroupDiagram]:
-    # initialize the driver in GUI mode with UC enabled
-    driver = Driver(uc=True, headless=False)
+    async with _driver as driver:
+        query: SouqQuery = {
+            "c": souq_diagram.car,
+            "ssd": souq_diagram.ssd,
+            "gid": souq_diagram.souq_gid,
+            "vid": 0,
+            "q": "",
+        }
 
-    query: SouqQuery = {
-        "c": souq_diagram["car"],
-        "ssd": souq_diagram["ssd"],
-        "gid": souq_diagram["souq_gid"],
-        "vid": 0,
-        "q": "",
-    }
+        url = build_url(SouqToolsUrlPath.group_diagram, query=query)
+        driver.uc_open_with_reconnect(url, reconnect_time=6)
 
-    url = build_souq_url(SouqToolsUrlPath.group_diagram, query=query)
-    # open URL with a 6-second reconnect time to bypass the initial JS challenge
-    driver.uc_open_with_reconnect(url, reconnect_time=6)
+        soup = BeautifulSoup(driver.page_source, "html5lib")
+        diagram_panels = soup.find_all("div", class_="panel panel-default")
+        diagrams: list[SouqGroupDiagram] = []
 
-    soup = BeautifulSoup(driver.page_source, "html5lib")
-    diagrams: list[SouqGroupDiagram] = []
+        for panel in diagram_panels:
+            header, body = panel.contents
+            diagram_title = header.find("h2").text.strip()
 
-    # part_rows = soup.find_all("tr", class_="part-search-tr")
-    panels = soup.find_all("div", class_="panel panel-default")
+            content_section = body.contents[0]
+            parts_table, diagram_image = content_section.contents
 
-    for panel in panels:
-        [heading, body] = panel.contents
-        title = heading.find("h2").text.strip()
-        [table, img] = body.contents[0].contents
-        # img url
-        img_url = souq_base_url + img.find("img").get_attribute_list("src")[0]
-        # parts
-        part_rows = table.find("tbody").contents
+            image_url = build_url(diagram_image.find("img")["src"])
 
-        parts: list[SouqPart] = []
-        for part_row in part_rows:
-            [number, name, part_code, note, amount, range] = part_row.contents
+            # Parse parts
+            parts_rows = parts_table.find("tbody").contents
+            diagram_parts: list[SouqPart] = []
 
-            parts.append(
+            for row in parts_rows:
+                number, name, part_code, note, amount, date_range = row.contents
+
+                diagram_parts.append(
+                    {
+                        "name": name.text.strip(),
+                        "number": number.text.strip(),
+                        "part_code": part_code.text.strip(),
+                        "note": note.text.strip(),
+                        "amount": amount.text.strip(),
+                        "date_range": date_range.text.strip(),
+                        "car": souq_diagram.car,
+                        "ssd": souq_diagram.ssd,
+                        "souq_gid": souq_diagram.souq_gid,
+                    }
+                )
+
+            diagrams.append(
                 {
-                    "name": name.text.strip(),
-                    "number": number.text.strip(),
-                    "part_code": part_code.text.strip(),
-                    "note": note.text.strip(),
-                    "amount": amount.text.strip(),
-                    "date_range": range.text.strip(),
-                    "car": souq_diagram["car"],
-                    "ssd": souq_diagram["ssd"],
-                    "souq_gid": souq_diagram["souq_gid"],
+                    "title": diagram_title,
+                    "img_url": image_url,
+                    "parts": diagram_parts,
+                    "gid": souq_diagram.souq_gid,
                 }
             )
 
-        diagrams.append(
-            {
-                "title": title,
-                "img_url": img_url,
-                "parts": parts,
-                "gid": souq_diagram["souq_gid"],
-            }
-        )
-
-    # close the browser
-    driver.quit()
-
-    return diagrams
+        return diagrams
 
 
 @router.get("/category-diagrams")
 async def get_category_diagrams(
-    part_category: SouqPartCategoryNames,
+    part_category: SouqPartCategoryNames, driver: Driver = Depends(get_selenium_driver)
 ) -> list[SouqDiagram]:
-    # initialize the driver in GUI mode with UC enabled
-    driver = Driver(uc=True, headless=False)
+    query: SouqQuery = {
+        "ssd": get_category_ssd(part_category.value).value,
+        "cname": part_category.value,
+        "cid": get_category_id(part_category).value,
+        "c": "TOYOTA00",
+        "vid": "0",
+        "q": "",
+    }
 
-    query = dict(base_category_query)
-    query["ssd"] = get_category_ssd(part_category.value).value
-    query["cname"] = part_category.value
-    query["cid"] = get_category_id(part_category).value
-
-    url = build_souq_url(SouqToolsUrlPath.categories, query)
-    # open URL with a 6-second reconnect time to bypass the initial JS challenge
+    url = build_url(SouqToolsUrlPath.categories, query)
     driver.uc_open_with_reconnect(url, reconnect_time=6)
 
     soup = BeautifulSoup(driver.page_source, "html5lib")
@@ -349,12 +284,12 @@ async def get_category_diagrams(
         img_urls = img.get_attribute_list("data-zoom-image") + img.get_attribute_list(
             "src"
         )
-        img_urls = list(map(lambda url: souq_base_url + url, img_urls))
+        img_urls = list(map(lambda url: build_url(url), img_urls))
 
         caption = diagram.find("h5").find("a")
         [number, title] = caption.text.split(":")
 
-        diagram_url = souq_base_url + caption.get_attribute_list("href")[0]
+        diagram_url = build_url(caption.get_attribute_list("href")[0])
 
         souq_deets = parse_qs(urlsplit(diagram_url)[3])
 
@@ -370,27 +305,20 @@ async def get_category_diagrams(
             }
         )
 
-    # close the browser
-    driver.quit()
-
     return diagrams_data
 
 
 @router.post("/diagram-parts")
 async def get_diagram_parts(
-    souq_diagram: SouqDiagram,
+    souq_diagram: SouqDiagram, driver: Driver = Depends(get_selenium_driver)
 ) -> list[SouqPart]:
-    # initialize the driver in GUI mode with UC enabled
-    driver = Driver(uc=True, headless=False)
-
     query: SouqQuery = {
         "c": souq_diagram["car"],
         "ssd": souq_diagram["ssd"],
         "uid": souq_diagram["souq_uid"],
         "cid": souq_diagram["cid"],
     }
-    url = build_souq_url(SouqToolsUrlPath.diagram, query=query)
-    # open URL with a 6-second reconnect time to bypass the initial JS challenge
+    url = build_url(SouqToolsUrlPath.diagram, query=query)
     driver.uc_open_with_reconnect(url, reconnect_time=6)
 
     soup = BeautifulSoup(driver.page_source, "html5lib")
@@ -414,34 +342,28 @@ async def get_diagram_parts(
             }
         )
 
-    # close the browser
-    driver.quit()
-
     return parts
 
 
 @router.post("/parts/{part_number}")
-async def get_part_search_list(part_number: str) -> list[SouqSearchPart]:
-    # initialize the driver in GUI mode with UC enabled
-    driver = Driver(uc=True, headless=False)
-
+async def get_part_search_list(
+    part_number: str, driver: Driver = Depends(get_selenium_driver)
+) -> list[SouqSearchPart]:
     query: SouqQuery = {
         "q": part_number,
     }
-    url = build_souq_url(SouqToolsUrlPath.search, query=query)
-    # open URL with a 6-second reconnect time to bypass the initial JS challenge
+    url = build_url(SouqToolsUrlPath.search, query=query)
     driver.uc_open_with_reconnect(url, reconnect_time=6)
 
     soup = BeautifulSoup(driver.page_source, "html5lib")
     parts: list[SouqSearchPart] = []
 
     search_rows = soup.find_all("div", class_="product-col list clearfix")
-    # search_rows = soup.find_all("div", class_="search-result-container")
 
     for search_row in search_rows:
         [diagram, details, price_section] = search_row.contents[0].contents
 
-        img_url = souq_base_url + diagram.find("img").get_attribute_list("src")[0]
+        img_url = build_url(diagram.find("img").get_attribute_list("src")[0])
         name = details.find("h1").text.strip()
         part_number = details.find("h2").text.split(":")[1].strip()
         parts_avaliable = details.find("p", class_="mb-10px").text[-1].strip()
@@ -461,8 +383,5 @@ async def get_part_search_list(part_number: str) -> list[SouqSearchPart]:
                 "img_url": img_url,
             }
         )
-
-    # close the browser
-    driver.quit()
 
     return parts
