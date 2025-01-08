@@ -1,26 +1,34 @@
-from typing import Annotated
+from __future__ import annotations
+
+from typing import Annotated, List
 
 from pydantic import StringConstraints
-from sqlalchemy import Boolean, Column, Integer, String
+from sqlalchemy import Column, ForeignKey, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 
 
 class Group(Base):
     __tablename__ = "groups"
-    id = Column(Integer, primary_key=True, index=True)
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    # duplicate diagrams exist
+    diagrams: Mapped[List["Diagram"]] = relationship()
+    # duplicate groups exist
+    sub_groups: Mapped[List["Group"]] = relationship()
+    parent_group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"))
     name = Column(String, nullable=False)
     diagrams_url = Column(String, nullable=True)
-    is_root = Column(Boolean, server_default="FALSE")
-    # sub_groups: Column(List(int))
 
 
 class Diagram(Base):
     __tablename__ = "diagrams"
-    id = Column(Integer, primary_key=True, index=True)
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    parent_group_id: Mapped[int] = mapped_column(ForeignKey("groups.id"))
     name = Column(String, nullable=False)
     img_url = Column(String, nullable=True)
-    # group_id = Column(Integer, index=True, nullable=False)
     # parts: list[Part] | None = None
 
 

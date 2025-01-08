@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -34,7 +34,7 @@ class DiagramBase(BaseModel):
     id: int
     name: str
     img_url: Optional[str] = None
-    # group_id: int
+    parent_group_id: Optional[int] = None
     # parts: list[Part] | None = None
 
 
@@ -51,8 +51,9 @@ class GroupBase(BaseModel):
     id: int
     name: str
     diagrams_url: Optional[str] = None
-    # groups: list[int]
-    is_root: bool = False
+    parent_group_id: Optional[int] = None
+    diagrams: List["Diagram"]
+    sub_groups: List["Group"]
 
 
 class CreateGroup(GroupBase):

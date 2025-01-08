@@ -20,7 +20,6 @@ def wipe_groups(db: Session):
 def post_bulk_groups(db: Session, groups: List[schemas.CreateGroup]):
     seen = set()
     for group in groups:
-        group = schemas.CreateGroup(**group)
         if group.id not in seen:
             seen.add(group.id)
             db.add(
@@ -28,7 +27,9 @@ def post_bulk_groups(db: Session, groups: List[schemas.CreateGroup]):
                     id=group.id,
                     name=group.name,
                     diagrams_url=group.diagrams_url,
-                    is_root=group.is_root,
+                    sub_groups=group.sub_groups,
+                    parent_group_id=group.parent_group_id,
+                    diagrams=group.diagrams,
                 )
             )
     db.commit()
@@ -56,6 +57,7 @@ def post_bulk_diagrams(db: Session, diagrams: List[schemas.CreateDiagram]):
                     id=diagram.id,
                     name=diagram.name,
                     img_url=diagram.img_url,
+                    parent_group_id=diagram.parent_group_id,
                     # group_id=diagram.group_id,
                 )
             )

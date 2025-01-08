@@ -81,13 +81,15 @@ async def scrape_groups() -> list[Group]:
         #         if str(group["id"]) == parent_id:
         #             group["groups"] = group["groups"] + [int(id)]
 
-        group: Group = {
-            "id": int(id),
-            "name": group_name,
-            "diagrams_url": link,
-            "is_root": parent_id is None,
+        group = Group(
+            id=int(id),
+            name=group_name,
+            diagrams_url=link,
+            diagrams=[],
+            sub_groups=[],
+            parent_group_id=parent_id,
             # "groups": [],
-        }
+        )
 
         groups.append(group)
 
@@ -180,7 +182,10 @@ async def scrape_group_diagrams(souq_group: Group) -> list[Diagram]:
 
         diagrams.append(
             Diagram(
-                id=int(f"{souq_group.id}{i}"), name=diagram_title, img_url=image_url
+                id=int(f"{souq_group.id}{i}"),
+                name=diagram_title,
+                img_url=image_url,
+                parent_group_id=souq_group.id,
             )
         )
 
