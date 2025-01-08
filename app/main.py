@@ -16,15 +16,31 @@
 # JSON schema: http://127.0.0.1:8000/openapi.json
 
 
-from enum import Enum
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# pip3 install seleniumbase
-from .routers import souq_scraper
+import app.models as models
+from app.db import engine
 
-app = FastAPI()
+from .routers import diagrams, groups, souq_scraper, souq_scraper_v2
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # create DB and tables
+    models.Base.metadata.create_all(bind=engine)
+    yield
+
+
+app = FastAPI(
+    title="LC 100 Series UZJ100L-GNPEKA",
+    description="LC 100 part groups, diagrams, and parts from PartsSouq",
+    version="0.1",
+    lifespan=lifespan,
+)
+
 
 origins = [
     "http://localhost",
@@ -45,30 +61,7 @@ async def hello_world() -> str:
     return "Hello World"
 
 
-class MainCategoryUrls(str, Enum):
-    body = "body/"
-    engine = "engine/"
-    chassis = "chassis/"
-    electric = "electric/"
-
-
-main_cats = [
-    "Engine, fuel system and tools",
-    "Transmission and chassis",
-    "Body and interior",
-    "Electrics",
-]
-
-
-headers = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-    "accept-language": "en-US,en;q=0.9",
-    "cache-control": "max-age=0",
-}
-lc_100_url: str = "https://toyota-usa.epc-data.com/land_cruiser/uzj100l/3703/"
-
-
-# app.include_router(parts.router)
+app.include_router(groups.router)
+app.include_router(diagrams.router)
 app.include_router(souq_scraper.router)
-# app.include_router(part_models.router)
+app.include_router(souq_scraper_v2.router)

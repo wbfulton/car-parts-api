@@ -10,18 +10,16 @@ class SouqQuery(BaseModel):
     q: str | None = ""
 
 
-class SouqDiagram(BaseModel):
-    title: str
-    number: int
-    image_urls: list[str] | None = None
-    souq_uid: int
-    car: str
-    ssd: str
-    cid: int
-    misc_links: list[str] = []
+class SouqSearchPart(BaseModel):
+    name: str
+    part_number: str
+    parts_avaliable: int = 0
+    weight_kg: float
+    price_usd: float
+    img_url: str | None = None
 
 
-class SouqPart(BaseModel):
+class SouqCategoryPart(BaseModel):
     number: str
     part_code: str
     car: str
@@ -35,23 +33,7 @@ class SouqPart(BaseModel):
     ssd: str | None = None
 
 
-class SouqGroupDiagram(BaseModel):
-    title: str
-    gid: int
-    img_url: str | None = None
-    parts: list[SouqPart]
-
-
-class SouqSearchPart(BaseModel):
-    name: str
-    part_number: str
-    parts_avaliable: int = 0
-    weight_kg: float
-    price_usd: float
-    img_url: str | None = None
-
-
-class SouqPartGroup(BaseModel):
+class SouqGroup(BaseModel):
     name: str
     group_number: int
     parent_group_number: int | None = None
@@ -62,7 +44,25 @@ class SouqPartGroup(BaseModel):
     souq_gid: int | None = None
 
 
+class SouqCategoryDiagram(BaseModel):
+    title: str
+    number: int
+    image_urls: list[str] | None = None
+    souq_uid: int
+    car: str
+    ssd: str
+    cid: int
+    misc_links: list[str] = []
+
+
+class SouqGroupDiagram(BaseModel):
+    title: str
+    gid: int
+    img_url: str | None = None
+    parts: list[SouqCategoryPart]
+
+
 class Everything(BaseModel):
     part_category: str
-    diagrams: list[SouqDiagram]
-    parts: list[SouqPart]
+    diagrams: list[SouqGroupDiagram]
+    parts: list[SouqGroup]

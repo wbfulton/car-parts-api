@@ -1,9 +1,8 @@
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Optional
+import asyncio
 from urllib.parse import parse_qs, urlsplit
 
 from bs4 import BeautifulSoup
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from seleniumbase import Driver
 
 from app.routers.utils import (
@@ -13,12 +12,12 @@ from app.routers.utils import (
     get_category_id,
     get_category_ssd,
 )
-from app.schemas.souq import (
+from app.schemas_old.souq import (
     Everything,
-    SouqDiagram,
+    SouqCategoryDiagram,
+    SouqCategoryPart,
+    SouqGroup,
     SouqGroupDiagram,
-    SouqPart,
-    SouqPartGroup,
     SouqQuery,
     SouqSearchPart,
 )
@@ -32,110 +31,75 @@ router = APIRouter(
 )
 
 
-class DriverManager:
-    _instance: Optional[Driver] = None
-
-    @classmethod
-    def get_driver(cls) -> Driver:
-        if cls._instance is None:
-            if cls._instance is not None:
-                cls._instance.quit()
-            cls._instance = Driver(uc=True, headless=False)
-        return cls._instance
-
-    @classmethod
-    def quit(cls):
-        if cls._instance is not None:
-            cls._instance.quit()
-            cls._instance = None
-
-
-@router.on_event("startup")
-async def startup_event():
-    DriverManager.get_driver()
-
-
-@router.on_event("shutdown")
-def shutdown_event():
-    DriverManager.quit()
-
-
-@asynccontextmanager
-async def get_selenium_driver() -> AsyncGenerator[Driver, None]:
-    try:
-        driver = DriverManager.get_driver()
-        yield driver
-    except Exception as e:
-        DriverManager.quit()
-        raise e
-
-
 @router.get("/")
 async def get_everything_by_category(
-    part_category: SouqPartCategoryNames, driver: Driver = Depends(get_selenium_driver)
+    part_category: SouqPartCategoryNames,
 ) -> Everything:
-    diagrams: list[SouqDiagram] = []
-    parts: list[SouqPart] = []
+    diagrams: list[SouqCategoryDiagram] = []
+    parts: list[SouqCategoryPart] = []
 
-    # Pass the driver to the helper functions
-    cat_diagrams = await get_category_diagrams(
-        part_category=part_category, driver=driver
-    )
+    cat_diagrams = await get_category_diagrams(part_category=part_category)
 
     for diagram in cat_diagrams:
         diagrams.append(diagram)
-        diagram_parts = await get_diagram_parts(souq_diagram=diagram, driver=driver)
+        diagram_parts = await get_catalog_diagram_parts(souq_diagram=diagram)
         parts.extend(diagram_parts)
 
     return {"part_category": part_category, "diagrams": diagrams, "parts": parts}
 
 
-@router.get("/all-group-diagram-parts")
-async def get_all_group_diagram_parts(
+# Map of group id to diagrams
+# TEMPORARY
+@router.get("/group/diagrams/map")
+async def get_all_group_diagrams(
     page_length: int = 20, token: int = 0
-) -> list[SouqGroupDiagram]:
-    # get categories
-    groups = await get_part_groups()
+) -> dict[str, list[SouqGroupDiagram]]:
+    # Get groups first
+    groups = await get_groups()
+    groups_diagrams: dict[str, list[SouqGroupDiagram]] = {}
 
-    diagrams: list[SouqGroupDiagram] = []
-    count = 0
-    for key in groups.keys():
-        for group in groups[key]:
-            if (
-                group["souq_gid"] is not None
-                and group["car"] is not None
-                and group["ssd"] is not None
-            ):
-                count += 1
-                if count < token + page_length:
-                    diagrams_parts = await get_group_diagram_parts(souq_diagram=group)
-                    for diagram in diagrams_parts:
-                        diagrams.append(diagram)
+    valid_groups: list[SouqGroup] = [
+        group
+        for key in groups.keys()
+        for group in groups[key]
+        if all(group.get(field) for field in ["souq_gid", "car", "ssd"])
+    ]
 
-    # get parts in each diagram
-    return diagrams
+    # Paginate results
+    paginated_groups: list[SouqGroup] = valid_groups[token : token + page_length]
+
+    for group in paginated_groups:
+        try:
+            diagrams = await get_group_diagrams(souq_group=group)
+            groups_diagrams[group["souq_gid"]] = diagrams
+            # Add small delay between requests
+            await asyncio.sleep(1)
+        except Exception as e:
+            print(f"Error processing group {group['souq_gid']}: {str(e)}")
+            continue
+
+    return groups_diagrams
 
 
-@router.get("/part-groups")
-async def get_part_groups(
-    driver: Driver = Depends(get_selenium_driver),
-) -> dict[str, list[SouqPartGroup]]:
+@router.get("/group")
+async def get_groups() -> dict[str, list[SouqGroup]]:
     group_query: SouqQuery = {
         "c": "TOYOTA00",
         "ssd": "$*KwEpHQwEck56RnkvRHgwI3FlRUJcLSIvLjwTIGhuXUlVUVNQFQIuRGpualtNVEUDHhQpIFFdVV49XBAZGUhfTzwqKi1hLAwrOW4_JjlAPzNgL3IhK2BibnN5XzluM3J-PyYqNj95KyhyITgsLSsuPzNgJT45ID8tKikrLXUDcmZka3V_WmY9IS9yITo_KyIrKSpybnw7OHRoOSA9PRINAlpXPzA7OHB8YHZwOU9HVioqLVNvCx5LX1ZdOTY9PTQvciE6c2l3djE_YCo5fzgnPCpnAAAAALIWi4w=$",
         "vid": "0",
-        "cid": "2",  # fix this
+        "cid": "2",
         "q": "",
     }
 
     url = build_url(SouqToolsUrlPath.groups, group_query)
-    driver.uc_open_with_reconnect(url, reconnect_time=6)
+    driver = Driver(uc=True, headless=False)
+    driver.uc_open_with_reconnect(url, reconnect_time=4)
 
     soup = BeautifulSoup(driver.page_source, "html5lib")
     groups_table = soup.find(
         "table", class_="table-mage table table-bordered- table-stripped tree"
     )
-    groups_data: list[SouqPartGroup] = []
+    groups_data: list[SouqGroup] = []
 
     for row in groups_table.contents[0].contents[1:]:
         group_name = row.get_text().strip()
@@ -184,82 +148,83 @@ async def get_part_groups(
         )
 
     # Group by parent
-    grouped_data: dict[str, list[SouqPartGroup]] = {}
+    grouped_data: dict[str, list[SouqGroup]] = {}
     for group in groups_data:
         parent = group["parent_group_number"] or "0"
         if parent not in grouped_data:
             grouped_data[parent] = []
         grouped_data[parent].append(group)
 
+    driver.quit()
     return grouped_data
 
 
-@router.post("/group-diagram-parts")
-async def get_group_diagram_parts(
-    souq_diagram: SouqPartGroup, _driver: Driver = Depends(get_selenium_driver)
-) -> list[SouqGroupDiagram]:
-    async with _driver as driver:
-        query: SouqQuery = {
-            "c": souq_diagram.car,
-            "ssd": souq_diagram.ssd,
-            "gid": souq_diagram.souq_gid,
-            "vid": 0,
-            "q": "",
-        }
+@router.post("/group/diagrams")
+async def get_group_diagrams(souq_group: SouqGroup) -> list[SouqGroupDiagram]:
+    souq_group = SouqGroup(**souq_group)
 
-        url = build_url(SouqToolsUrlPath.group_diagram, query=query)
-        driver.uc_open_with_reconnect(url, reconnect_time=6)
+    query: SouqQuery = {
+        "c": souq_group.car,
+        "ssd": souq_group.ssd,
+        "gid": souq_group.souq_gid,
+        "vid": 0,
+        "q": "",
+    }
+    url = build_url(SouqToolsUrlPath.group_diagram, query=query)
+    driver = Driver(uc=True, headless=False)
+    driver.uc_open_with_reconnect(url, reconnect_time=4)
 
-        soup = BeautifulSoup(driver.page_source, "html5lib")
-        diagram_panels = soup.find_all("div", class_="panel panel-default")
-        diagrams: list[SouqGroupDiagram] = []
+    soup = BeautifulSoup(driver.page_source, "html5lib")
+    diagram_panels = soup.find_all("div", class_="panel panel-default")
+    diagrams: list[SouqGroupDiagram] = []
 
-        for panel in diagram_panels:
-            header, body = panel.contents
-            diagram_title = header.find("h2").text.strip()
+    for panel in diagram_panels:
+        header, body = panel.contents
+        diagram_title = header.find("h2").text.strip()
 
-            content_section = body.contents[0]
-            parts_table, diagram_image = content_section.contents
+        content_section = body.contents[0]
+        parts_table, diagram_image = content_section.contents
 
-            image_url = build_url(diagram_image.find("img")["src"])
+        image_url = build_url(diagram_image.find("img")["src"])
 
-            # Parse parts
-            parts_rows = parts_table.find("tbody").contents
-            diagram_parts: list[SouqPart] = []
+        # Parse parts
+        parts_rows = parts_table.find("tbody").contents
+        diagram_parts: list[SouqCategoryPart] = []
 
-            for row in parts_rows:
-                number, name, part_code, note, amount, date_range = row.contents
+        for row in parts_rows:
+            number, name, part_code, note, amount, date_range = row.contents
 
-                diagram_parts.append(
-                    {
-                        "name": name.text.strip(),
-                        "number": number.text.strip(),
-                        "part_code": part_code.text.strip(),
-                        "note": note.text.strip(),
-                        "amount": amount.text.strip(),
-                        "date_range": date_range.text.strip(),
-                        "car": souq_diagram.car,
-                        "ssd": souq_diagram.ssd,
-                        "souq_gid": souq_diagram.souq_gid,
-                    }
-                )
-
-            diagrams.append(
+            diagram_parts.append(
                 {
-                    "title": diagram_title,
-                    "img_url": image_url,
-                    "parts": diagram_parts,
-                    "gid": souq_diagram.souq_gid,
+                    "name": name.text.strip(),
+                    "number": number.text.strip(),
+                    "part_code": part_code.text.strip(),
+                    "note": note.text.strip(),
+                    "amount": amount.text.strip(),
+                    "date_range": date_range.text.strip(),
+                    "car": souq_group.car,
+                    "ssd": souq_group.ssd,
+                    "souq_gid": souq_group.souq_gid,
                 }
             )
 
-        return diagrams
+        diagrams.append(
+            {
+                "title": diagram_title,
+                "img_url": image_url,
+                "parts": diagram_parts,
+                "gid": souq_group.souq_gid,
+            }
+        )
+
+    driver.quit()
+    return diagrams
 
 
-@router.get("/category-diagrams")
+@router.get("/category-diagram")
 async def get_category_diagrams(
-    part_category: SouqPartCategoryNames, driver: Driver = Depends(get_selenium_driver)
-) -> list[SouqDiagram]:
+    part_category: SouqPartCategoryNames,
+) -> list[SouqCategoryDiagram]:
     query: SouqQuery = {
         "ssd": get_category_ssd(part_category.value).value,
         "cname": part_category.value,
@@ -270,10 +235,11 @@ async def get_category_diagrams(
     }
 
     url = build_url(SouqToolsUrlPath.categories, query)
-    driver.uc_open_with_reconnect(url, reconnect_time=6)
+    driver = Driver(uc=True, headless=False)
+    driver.uc_open_with_reconnect(url, reconnect_time=4)
 
     soup = BeautifulSoup(driver.page_source, "html5lib")
-    diagrams_data: list[SouqDiagram] = []
+    diagrams_data: list[SouqCategoryDiagram] = []
 
     diagrams = soup.find_all("div", "thumbnail thumb-boss")
     for diagram in diagrams:
@@ -305,24 +271,27 @@ async def get_category_diagrams(
             }
         )
 
+    driver.quit()
     return diagrams_data
 
 
-@router.post("/diagram-parts")
-async def get_diagram_parts(
-    souq_diagram: SouqDiagram, driver: Driver = Depends(get_selenium_driver)
-) -> list[SouqPart]:
+# Returns parts for a standard diagram
+@router.post("/catalog-diagram/parts")
+async def get_catalog_diagram_parts(
+    souq_diagram: SouqCategoryDiagram,
+) -> list[SouqCategoryPart]:
     query: SouqQuery = {
-        "c": souq_diagram["car"],
-        "ssd": souq_diagram["ssd"],
-        "uid": souq_diagram["souq_uid"],
-        "cid": souq_diagram["cid"],
+        "c": souq_diagram.car,
+        "ssd": souq_diagram.ssd,
+        "uid": souq_diagram.souq_uid,
+        "cid": souq_diagram.cid,
     }
     url = build_url(SouqToolsUrlPath.diagram, query=query)
-    driver.uc_open_with_reconnect(url, reconnect_time=6)
+    driver = Driver(uc=True, headless=False)
+    driver.uc_open_with_reconnect(url, reconnect_time=4)
 
     soup = BeautifulSoup(driver.page_source, "html5lib")
-    parts: list[SouqPart] = []
+    parts: list[SouqCategoryPart] = []
 
     part_rows = soup.find_all("tr", class_="part-search-tr")
     for part_row in part_rows:
@@ -336,24 +305,26 @@ async def get_diagram_parts(
                 "note": note.text.strip(),
                 "amount": amount.text.strip(),
                 "date_range": range.text.strip(),
-                "car": souq_diagram["car"],
-                "diagram_uid": souq_diagram["souq_uid"],
-                "cid": souq_diagram["cid"],
+                "car": souq_diagram.car,
+                "diagram_uid": souq_diagram.souq_uid,
+                "cid": souq_diagram.cid,
             }
         )
 
+    driver.quit()
     return parts
 
 
 @router.post("/parts/{part_number}")
 async def get_part_search_list(
-    part_number: str, driver: Driver = Depends(get_selenium_driver)
+    part_number: str,
 ) -> list[SouqSearchPart]:
     query: SouqQuery = {
         "q": part_number,
     }
     url = build_url(SouqToolsUrlPath.search, query=query)
-    driver.uc_open_with_reconnect(url, reconnect_time=6)
+    driver = Driver(uc=True, headless=False)
+    driver.uc_open_with_reconnect(url, reconnect_time=4)
 
     soup = BeautifulSoup(driver.page_source, "html5lib")
     parts: list[SouqSearchPart] = []
@@ -384,4 +355,18 @@ async def get_part_search_list(
             }
         )
 
+    driver.quit()
     return parts
+
+
+def parse_table_row(row: BeautifulSoup) -> dict:
+    """Helper to parse table rows consistently"""
+    columns = row.find_all("td")
+    return {
+        "name": columns[1].text.strip() if len(columns) > 1 else "",
+        "number": columns[0].text.strip() if columns else "",
+        "part_code": columns[2].text.strip() if len(columns) > 2 else "",
+        "note": columns[3].text.strip() if len(columns) > 3 else "",
+        "amount": columns[4].text.strip() if len(columns) > 4 else "",
+        "date_range": columns[5].text.strip() if len(columns) > 5 else "",
+    }
