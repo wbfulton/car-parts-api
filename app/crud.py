@@ -58,7 +58,38 @@ def post_bulk_diagrams(db: Session, diagrams: List[schemas.CreateDiagram]):
                     name=diagram.name,
                     img_url=diagram.img_url,
                     parent_group_id=diagram.parent_group_id,
-                    # group_id=diagram.group_id,
+                    parts=diagram.parts,
+                )
+            )
+    db.commit()
+
+
+# DIAGRAMS
+
+
+def get_parts(db: Session):
+    return db.query(models.Part).all()
+
+
+def wipe_parts(db: Session):
+    db.query(models.Part).delete()
+    db.commit()
+
+
+def post_bulk_parts(db: Session, parts: List[schemas.CreatePart]):
+    seen = set()
+    for part in parts:
+        if part.id not in seen:
+            seen.add(part.id)
+            db.add(
+                models.Part(
+                    id=part.id,
+                    parent_diagram_id=part.parent_diagram_id,
+                    number=part.number,
+                    amount=part.amount,
+                    note=part.note,
+                    name=part.name,
+                    date_range=part.date_range,
                 )
             )
     db.commit()

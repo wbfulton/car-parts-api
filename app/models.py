@@ -29,7 +29,19 @@ class Diagram(Base):
     parent_group_id: Mapped[int] = mapped_column(ForeignKey("groups.id"))
     name = Column(String, nullable=False)
     img_url = Column(String, nullable=True)
-    # parts: list[Part] | None = None
+    parts: Mapped[List["Part"]] = relationship()
+
+
+class Part(Base):
+    __tablename__ = "parts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    parent_diagram_id: Mapped[int] = mapped_column(ForeignKey("diagrams.id"))
+    number = Column(String, nullable=False)
+    amount = Column(String, nullable=True)
+    note = Column(String, nullable=True)
+    name = Column(String, nullable=True)
+    date_range = Column(String, nullable=True)
 
 
 # TEST THIS

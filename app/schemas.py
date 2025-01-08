@@ -21,13 +21,23 @@ class PartDetailed(BaseModel):
     img_url: str | None = None
 
 
-class Part(BaseModel):
+class PartBase(BaseModel):
     id: int
     number: str
+    parent_diagram_id: int
     amount: int | None = None
     note: str | None = None
     name: str
     date_range: str | None = None
+
+
+class Part(BaseModel):
+    class Config:
+        orm_mode = True
+
+
+class CreatePart(PartBase):
+    pass
 
 
 class DiagramBase(BaseModel):
@@ -35,7 +45,7 @@ class DiagramBase(BaseModel):
     name: str
     img_url: Optional[str] = None
     parent_group_id: Optional[int] = None
-    # parts: list[Part] | None = None
+    parts: list["Part"]
 
 
 class CreateDiagram(DiagramBase):
