@@ -8,8 +8,8 @@ import app.schemas as schemas
 # GROUPS
 
 
-def get_groups_nested(db: Session, page_length: int = 10, token: int = 0):
-    all_groups = db.query(models.Group).offset(token).limit(page_length).all()
+def get_groups_nested(db: Session):
+    all_groups = db.query(models.Group).all()
     cleaned_groups: List[models.Group] = []
     # ORM will every group flat, and nested.
     # We must clean this to be just nested
@@ -21,6 +21,10 @@ def get_groups_nested(db: Session, page_length: int = 10, token: int = 0):
 
 def get_groups_flat(db: Session, page_length: int = 10, token: int = 0):
     return db.query(models.Group).offset(token).limit(page_length).all()
+
+
+def get_group(db: Session, id: int):
+    return db.query(models.Group).get(id)
 
 
 def wipe_groups(db: Session):

@@ -35,8 +35,6 @@ async def scrape_all_diagrams(
         if group.diagrams_url is not None:
             valid_groups.append(group)
 
-    print(len(groups))
-
     # valid_groups: list[schemas.Group] = valid_groups[token : token + page_length]
 
     diagrams: list[schemas.CreateDiagram] = []

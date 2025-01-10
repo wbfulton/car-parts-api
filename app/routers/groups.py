@@ -1,6 +1,6 @@
 from typing import List
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 import app.crud as crud
@@ -17,13 +17,24 @@ router = APIRouter(
 )
 
 
-@router.get("/", response_model=List[schemas.CreateGroup])
-async def get_all_groups(
-    db: Session = Depends(get_db), page_length: int = 10, token: int = 0
-):
-    groups = crud.get_groups_flat(db, page_length, token)
+@router.get("/", response_model=List[schemas.PartialGroup])
+async def get_nested_groups(db: Session = Depends(get_db)):
+    groups = crud.get_groups_nested(db)
 
     return groups
+
+
+@router.get("/{id}", response_model=schemas.Group)
+async def get_group(id: int, db: Session = Depends(get_db)):
+    group: schemas.Group = crud.get_group(db, id)
+
+    if group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    if len(group.diagrams) == 0:
+        raise HTTPException(status_code=400, detail="Group has no diagrams")
+
+    return group
 
 
 @router.post("/scrape", response_model=List[schemas.CreateGroup])

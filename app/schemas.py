@@ -71,6 +71,10 @@ class CreateGroup(GroupBase):
     pass
 
 
+class PartialGroup(GroupBase):
+    sub_groups: List["PartialGroup"]
+
+
 class Group(GroupBase):
     diagrams: List["Diagram"]
     sub_groups: List["Group"]
