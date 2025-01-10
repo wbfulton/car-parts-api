@@ -1,4 +1,5 @@
 import asyncio
+from typing import Tuple
 from urllib.parse import parse_qs, urlsplit
 
 from bs4 import BeautifulSoup
@@ -10,8 +11,11 @@ from app.routers.utils import (
     build_url,
 )
 from app.schemas import (
-    Diagram,
+    CreateDiagram,
+    CreateGroup,
+    CreatePart,
     Group,
+    Part,
     PartDetailed,
     SouqQuery,
 )
@@ -26,7 +30,7 @@ router = APIRouter(
 
 
 @router.get("/group")
-async def scrape_groups() -> list[Group]:
+async def scrape_groups() -> list[CreateGroup]:
     group_query: SouqQuery = {
         "c": "TOYOTA00",
         "ssd": "$*KwEpHQwEck56RnkvRHgwI3FlRUJcLSIvLjwTIGhuXUlVUVNQFQIuRGpualtNVEUDHhQpIFFdVV49XBAZGUhfTzwqKi1hLAwrOW4_JjlAPzNgL3IhK2BibnN5XzluM3J-PyYqNj95KyhyITgsLSsuPzNgJT45ID8tKikrLXUDcmZka3V_WmY9IS9yITo_KyIrKSpybnw7OHRoOSA9PRINAlpXPzA7OHB8YHZwOU9HVioqLVNvCx5LX1ZdOTY9PTQvciE6c2l3djE_YCo5fzgnPCpnAAAAALIWi4w=$",
@@ -43,7 +47,7 @@ async def scrape_groups() -> list[Group]:
     groups_table = soup.find(
         "table", class_="table-mage table table-bordered- table-stripped tree"
     )
-    groups: list[Group] = []
+    groups: list[CreateGroup] = []
 
     rows = groups_table.contents[0].contents[1:]
 
@@ -75,20 +79,12 @@ async def scrape_groups() -> list[Group]:
         link = row.find("a")
         if link:
             link = build_url(link["href"])
-        # not optimal, but works for now
-        # if parent_id is not None:
-        #     for group in groups:
-        #         if str(group["id"]) == parent_id:
-        #             group["groups"] = group["groups"] + [int(id)]
 
-        group = Group(
+        group = CreateGroup(
             id=int(id),
             name=group_name,
             diagrams_url=link,
-            diagrams=[],
-            sub_groups=[],
             parent_group_id=parent_id,
-            # "groups": [],
         )
 
         groups.append(group)
@@ -99,10 +95,10 @@ async def scrape_groups() -> list[Group]:
 
 # pagination is for the valid groups, not diagrams
 @router.post("/diagrams")
-async def get_diagrams(page_length: int = 435, token: int = 0) -> list[Diagram]:
+async def get_diagrams(page_length: int = 435, token: int = 0) -> list[CreateDiagram]:
     # # Get groups first
     groups = await scrape_groups()
-    diagrams: list[Diagram] = []
+    diagrams: list[CreateDiagram] = []
 
     valid_groups: list[Group] = []
     for group in groups:
@@ -115,7 +111,9 @@ async def get_diagrams(page_length: int = 435, token: int = 0) -> list[Diagram]:
 
     for i, group in enumerate(valid_groups):
         try:
-            new_diagrams = await scrape_group_diagrams(souq_group=group)
+            [
+                new_diagrams,
+            ] = await scrape_group_diagrams(souq_group=group)
             diagrams = diagrams + new_diagrams
             # Add small delay between requests
             await asyncio.sleep(1)
@@ -127,7 +125,9 @@ async def get_diagrams(page_length: int = 435, token: int = 0) -> list[Diagram]:
 
 
 @router.post("/group/diagrams")
-async def scrape_group_diagrams(souq_group: Group) -> list[Diagram]:
+async def scrape_group_diagrams(
+    souq_group: Group,
+) -> Tuple[list[CreateDiagram], list[Part]]:
     if isinstance(souq_group, dict):
         souq_group = Group(**souq_group)
 
@@ -145,7 +145,8 @@ async def scrape_group_diagrams(souq_group: Group) -> list[Diagram]:
 
     soup = BeautifulSoup(driver.page_source, "html5lib")
     diagram_panels = soup.find_all("div", class_="panel panel-default")
-    diagrams: list[Diagram] = []
+    diagrams: list[CreateDiagram] = []
+    parts: list[CreatePart] = []
 
     for i, panel in enumerate(diagram_panels):
         header, body = panel.contents
@@ -156,33 +157,45 @@ async def scrape_group_diagrams(souq_group: Group) -> list[Diagram]:
 
         image_url = build_url(diagram_image.find("img")["src"])
 
-        # # Parse parts
-        # parts_rows = parts_table.find("tbody").contents
-        # diagram_parts: list[Part] = []
+        diagram_id = int(f"{souq_group.id}{i}")
 
-        # for j, row in enumerate(parts_rows):
-        #     number, name, part_code, note, amount, date_range = row.contents
-        #     amount = amount.text.strip()
-        #     while amount is not None and len(amount) > 1 and amount[0] == "0":
-        #         amount = amount[1:]
-        #     if amount == "" or amount == "X" or amount == "x":
-        #         amount = None
-        #     else:
-        #         amount = int(amount)
-        #     diagram_parts.append(
-        #         {
-        #             "name": name.text.strip(),
-        #             "id": f"{souq_group.id}{i}{j}",
-        #             "number": number.text.strip(),
-        #             "note": note.text.strip(),
-        #             "amount": amount,
-        #             "date_range": date_range.text.strip(),
-        #         }
-        #     )
+        # Parse parts
+        parts_rows = parts_table.find("tbody").contents
+
+        for j, row in enumerate(parts_rows):
+            number, name, part_code, note, amount, date_range = row.contents
+            amount = amount.text.strip()
+            while amount is not None and len(amount) > 1 and amount[0] == "0":
+                amount = amount[1:]
+            if amount == "" or amount == "X" or amount == "x":
+                amount = None
+            else:
+                amount = int(amount)
+            part = {
+                "id": int(f"{souq_group.id}{i}{j}"),
+                "name": str(name.text.strip()),
+                "parent_diagram_id": diagram_id,
+                "number": str(number.text.strip()),
+                "note": note.text.strip(),
+                "amount": amount,
+                "date_range": date_range.text.strip(),
+            }
+
+            parts.append(
+                CreatePart(
+                    id=part["id"],
+                    name=part["name"],
+                    parent_diagram_id=part["parent_diagram_id"],
+                    number=part["number"],
+                    note=part["note"],
+                    amount=part["amount"],
+                    date_range=part["date_range"],
+                )
+            )
 
         diagrams.append(
-            Diagram(
-                id=int(f"{souq_group.id}{i}"),
+            CreateDiagram(
+                id=diagram_id,
                 name=diagram_title,
                 img_url=image_url,
                 parent_group_id=souq_group.id,
@@ -190,7 +203,7 @@ async def scrape_group_diagrams(souq_group: Group) -> list[Diagram]:
         )
 
     driver.quit()
-    return diagrams
+    return [diagrams, parts]
 
 
 @router.post("/parts/{part_number}")

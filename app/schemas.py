@@ -23,15 +23,17 @@ class PartDetailed(BaseModel):
 
 class PartBase(BaseModel):
     id: int
+
     number: str
-    parent_diagram_id: int
     amount: int | None = None
-    note: str | None = None
     name: str
+    note: str | None = None
     date_range: str | None = None
 
+    parent_diagram_id: int
 
-class Part(BaseModel):
+
+class Part(PartBase):
     class Config:
         orm_mode = True
 
@@ -44,8 +46,7 @@ class DiagramBase(BaseModel):
     id: int
     name: str
     img_url: Optional[str] = None
-    parent_group_id: Optional[int] = None
-    parts: list["Part"]
+    parent_group_id: int
 
 
 class CreateDiagram(DiagramBase):
@@ -53,6 +54,8 @@ class CreateDiagram(DiagramBase):
 
 
 class Diagram(DiagramBase):
+    parts: list["Part"]
+
     class Config:
         orm_mode = True
 
@@ -62,8 +65,6 @@ class GroupBase(BaseModel):
     name: str
     diagrams_url: Optional[str] = None
     parent_group_id: Optional[int] = None
-    diagrams: List["Diagram"]
-    sub_groups: List["Group"]
 
 
 class CreateGroup(GroupBase):
@@ -71,5 +72,8 @@ class CreateGroup(GroupBase):
 
 
 class Group(GroupBase):
+    diagrams: List["Diagram"]
+    sub_groups: List["Group"]
+
     class Config:
         orm_mode = True

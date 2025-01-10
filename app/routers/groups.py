@@ -17,14 +17,16 @@ router = APIRouter(
 )
 
 
-@router.get("/", response_model=List[schemas.Group])
-async def get_all_groups(db: Session = Depends(get_db)):
-    groups = crud.get_groups(db)
+@router.get("/", response_model=List[schemas.CreateGroup])
+async def get_all_groups(
+    db: Session = Depends(get_db), page_length: int = 10, token: int = 0
+):
+    groups = crud.get_groups_flat(db, page_length, token)
 
     return groups
 
 
-@router.post("/scrape", response_model=List[schemas.Group])
+@router.post("/scrape", response_model=List[schemas.CreateGroup])
 async def scrape_all_groups(db: Session = Depends(get_db)):
     groups = await scrape_groups()
 
@@ -32,3 +34,8 @@ async def scrape_all_groups(db: Session = Depends(get_db)):
     crud.post_bulk_groups(db, groups)
 
     return groups
+
+
+@router.delete("/wipe", response_model=List[schemas.Group])
+async def delete_all_groups(db: Session = Depends(get_db)):
+    crud.wipe_groups(db)

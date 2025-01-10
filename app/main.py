@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import app.models as models
 from app.db import engine
 
-from .routers import diagrams, groups, souq_scraper, souq_scraper_v2
+from .routers import diagrams, groups, parts, souq_scraper, souq_scraper_v2
 
 
 @asynccontextmanager
@@ -63,5 +63,6 @@ async def hello_world() -> str:
 
 app.include_router(groups.router)
 app.include_router(diagrams.router)
+app.include_router(parts.router)
 app.include_router(souq_scraper.router)
 app.include_router(souq_scraper_v2.router)

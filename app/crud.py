@@ -8,8 +8,19 @@ import app.schemas as schemas
 # GROUPS
 
 
-def get_groups(db: Session):
-    return db.query(models.Group).all()
+def get_groups_nested(db: Session, page_length: int = 10, token: int = 0):
+    all_groups = db.query(models.Group).offset(token).limit(page_length).all()
+    cleaned_groups: List[models.Group] = []
+    # ORM will every group flat, and nested.
+    # We must clean this to be just nested
+    for group in all_groups:
+        if group.parent_group_id is None:
+            cleaned_groups.append(group)
+    return cleaned_groups
+
+
+def get_groups_flat(db: Session, page_length: int = 10, token: int = 0):
+    return db.query(models.Group).offset(token).limit(page_length).all()
 
 
 def wipe_groups(db: Session):
@@ -27,9 +38,7 @@ def post_bulk_groups(db: Session, groups: List[schemas.CreateGroup]):
                     id=group.id,
                     name=group.name,
                     diagrams_url=group.diagrams_url,
-                    sub_groups=group.sub_groups,
                     parent_group_id=group.parent_group_id,
-                    diagrams=group.diagrams,
                 )
             )
     db.commit()
@@ -58,17 +67,16 @@ def post_bulk_diagrams(db: Session, diagrams: List[schemas.CreateDiagram]):
                     name=diagram.name,
                     img_url=diagram.img_url,
                     parent_group_id=diagram.parent_group_id,
-                    parts=diagram.parts,
                 )
             )
     db.commit()
 
 
-# DIAGRAMS
+# PARTS
 
 
-def get_parts(db: Session):
-    return db.query(models.Part).all()
+def get_parts(db: Session, page_length: int = 10, token: int = 0):
+    return db.query(models.Part).offset(token).limit(page_length).all()
 
 
 def wipe_parts(db: Session):
