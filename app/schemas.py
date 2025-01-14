@@ -22,39 +22,38 @@ class PartDetailed(BaseModel):
 
 
 class PartBase(BaseModel):
-    id: int
-
     number: str
-    amount: int | None = None
-    name: str
+    # amount: int | None = None
     note: str | None = None
+    name: str
     date_range: str | None = None
-
-    parent_diagram_id: int
 
 
 class Part(PartBase):
+    diagrams: List["Diagram"]
+    id: int
+
     class Config:
         orm_mode = True
 
 
 class CreatePart(PartBase):
-    pass
+    parent_diagram_id: int
 
 
 class DiagramBase(BaseModel):
     id: int
     name: str
     img_url: Optional[str] = None
-    parent_group_id: int
 
 
 class CreateDiagram(DiagramBase):
-    pass
+    parent_group_id: int
 
 
 class Diagram(DiagramBase):
     parts: list["Part"]
+    groups: list["Group"]
 
     class Config:
         orm_mode = True
@@ -64,20 +63,35 @@ class GroupBase(BaseModel):
     id: int
     name: str
     diagrams_url: Optional[str] = None
-    parent_group_id: Optional[int] = None
 
 
 class CreateGroup(GroupBase):
-    pass
+    parent_group_id: Optional[int] = None
 
 
 class PartialGroup(GroupBase):
-    sub_groups: List["PartialGroup"]
+    children: List["PartialGroup"]
 
 
 class Group(GroupBase):
+    parents: List["Group"]
+    children: List["Group"]
     diagrams: List["Diagram"]
-    sub_groups: List["Group"]
 
+    class Config:
+        orm_mode = True
+
+
+class PartsSouqPageDataBase(BaseModel):
+    id: int
+    url: str
+    html_string: str
+
+
+class CreatePartsSouqPageData(PartsSouqPageDataBase):
+    pass
+
+
+class PartsSouqPageData(PartsSouqPageDataBase):
     class Config:
         orm_mode = True

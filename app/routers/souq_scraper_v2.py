@@ -124,6 +124,31 @@ async def get_diagrams(page_length: int = 435, token: int = 0) -> list[CreateDia
     return diagrams
 
 
+@router.post("/group/save")
+async def scrape_save_group_diagrams(
+    souq_group: Group,
+) -> Tuple[str, str]:
+    if isinstance(souq_group, dict):
+        souq_group = Group(**souq_group)
+
+    url_params = parse_qs(urlsplit(souq_group.diagrams_url)[3])
+    query: SouqQuery = {
+        "c": url_params["c"][0],
+        "ssd": url_params["ssd"][0],
+        "gid": url_params["gid"][0],
+        "vid": 0,
+        "q": "",
+    }
+    url = build_url(SouqToolsUrlPath.group_diagram, query=query)
+    driver = Driver(uc=True, headless=True)
+    driver.uc_open_with_reconnect(url, reconnect_time=4)
+
+    soup = BeautifulSoup(driver.page_source, "html5lib")
+
+    driver.quit()
+    return [url, str(soup)]
+
+
 @router.post("/group/diagrams")
 async def scrape_group_diagrams(
     souq_group: Group,
@@ -144,6 +169,7 @@ async def scrape_group_diagrams(
     driver.uc_open_with_reconnect(url, reconnect_time=4)
 
     soup = BeautifulSoup(driver.page_source, "html5lib")
+
     diagram_panels = soup.find_all("div", class_="panel panel-default")
     diagrams: list[CreateDiagram] = []
     parts: list[CreatePart] = []
@@ -172,7 +198,6 @@ async def scrape_group_diagrams(
             else:
                 amount = int(amount)
             part = {
-                "id": int(f"{souq_group.id}{i}{j}"),
                 "name": str(name.text.strip()),
                 "parent_diagram_id": diagram_id,
                 "number": str(number.text.strip()),
@@ -183,7 +208,6 @@ async def scrape_group_diagrams(
 
             parts.append(
                 CreatePart(
-                    id=part["id"],
                     name=part["name"],
                     parent_diagram_id=part["parent_diagram_id"],
                     number=part["number"],

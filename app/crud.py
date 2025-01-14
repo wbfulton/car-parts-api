@@ -14,7 +14,7 @@ def get_groups_nested(db: Session):
     # ORM will every group flat, and nested.
     # We must clean this to be just nested
     for group in all_groups:
-        if group.parent_group_id is None:
+        if len(group.parents) == 0:
             cleaned_groups.append(group)
     return cleaned_groups
 
@@ -33,26 +33,25 @@ def wipe_groups(db: Session):
 
 
 def post_bulk_groups(db: Session, groups: List[schemas.CreateGroup]):
-    for group in groups:
-        exists = db.query(models.Group).get(group.id)
-        if exists is not None:
-            db.query(models.Group).filter(models.Group.id == group.id).update(
-                {
-                    models.Group.name: group.name,
-                    models.Group.diagrams_url: group.diagrams_url,
-                    models.Group.parent_group_id: group.parent_group_id,
-                }
+    for new_group in groups:
+        # Add Group to DB if not already in
+        group = db.query(models.Group).get(new_group.id)
+        if group is None:
+            group = models.Group(
+                id=new_group.id,
+                name=new_group.name,
+                diagrams_url=new_group.diagrams_url,
             )
-        else:
-            db.add(
-                models.Group(
-                    id=group.id,
-                    name=group.name,
-                    diagrams_url=group.diagrams_url,
-                    parent_group_id=group.parent_group_id,
-                )
-            )
-    db.commit()
+            db.add(group)
+
+        # Update parent - child relations if necessary
+        if new_group.parent_group_id is not None:
+            parent_group = db.query(models.Group).get(new_group.parent_group_id)
+            if group not in parent_group.children:
+                parent_group.children.append(group)
+
+        # Commit on each loop (not ACID) to speed up dev process
+        db.commit()
 
 
 # DIAGRAMS
@@ -68,26 +67,24 @@ def wipe_diagrams(db: Session):
 
 
 def post_bulk_diagrams(db: Session, diagrams: List[schemas.CreateDiagram]):
-    for diagram in diagrams:
-        exists = db.query(models.Diagram).get(diagram.id)
-        if exists is not None:
-            db.query(models.Diagram).filter(models.Diagram.id == diagram.id).update(
-                {
-                    models.Diagram.name: diagram.name,
-                    models.Diagram.img_url: diagram.img_url,
-                    models.Diagram.parent_group_id: diagram.parent_group_id,
-                }
+    for new_diagram in diagrams:
+        # Add Diagram to DB if not already in
+        diagram = db.query(models.Diagram).get(new_diagram.id)
+        if diagram is None:
+            diagram = models.Diagram(
+                id=new_diagram.id,
+                name=new_diagram.name,
+                img_url=new_diagram.img_url,
             )
-        else:
-            db.add(
-                models.Diagram(
-                    id=diagram.id,
-                    name=diagram.name,
-                    img_url=diagram.img_url,
-                    parent_group_id=diagram.parent_group_id,
-                )
-            )
-    db.commit()
+            db.add(diagram)
+
+        # Update parent - child relations if necessary
+        parent_group = db.query(models.Group).get(new_diagram.parent_group_id)
+        if diagram not in parent_group.diagrams:
+            parent_group.diagrams.append(diagram)
+
+        # Commit on each loop (not ACID) to speed up dev process
+        db.commit()
 
 
 # PARTS
@@ -103,33 +100,57 @@ def wipe_parts(db: Session):
 
 
 def post_bulk_parts(db: Session, parts: List[schemas.CreatePart]):
-    already_added = set()
-    for part in parts:
-        exists = db.query(models.Part).get(part.id)
+    for new_part in parts:
+        # Add Diagram to DB if not already in
+        part = db.query(models.Part).filter(models.Part.number == new_part.number).all()
+        if part is None or len(part) == 0:
+            part = models.Part(
+                number=new_part.number,
+                # amount=part.amount,
+                note=new_part.note,
+                name=new_part.name,
+                date_range=new_part.date_range,
+            )
+            db.add(part)
+        else:
+            part = part[0]
 
-        print(part)
-        if exists is not None and part.id not in already_added:
-            db.query(models.Part).filter(models.Part.id == part.id).update(
-                {
-                    models.Part.parent_diagram_id: part.parent_diagram_id,
-                    models.Part.number: part.number,
-                    models.Part.amount: part.amount,
-                    models.Part.note: part.note,
-                    models.Part.name: part.name,
-                    models.Part.date_range: part.date_range,
-                }
-            )
-        elif part.id not in already_added:
-            db.add(
-                models.Part(
-                    id=part.id,
-                    parent_diagram_id=part.parent_diagram_id,
-                    number=part.number,
-                    amount=part.amount,
-                    note=part.note,
-                    name=part.name,
-                    date_range=part.date_range,
-                )
-            )
-        already_added.add(part.id)
+        # Update parent - child relations if necessary
+        parent_diagram = db.query(models.Diagram).get(new_part.parent_diagram_id)
+        if part not in parent_diagram.parts:
+            parent_diagram.parts.append(part)
+
+        # Commit on each loop (not ACID) to speed up dev process
+        db.commit()
+
+
+# SCRAPING
+
+
+def get_urls(db: Session):
+    pages = db.query(models.PartsSouqPageData).all()
+    return pages
+
+
+def get_group_url_html(db: Session, group_id: int) -> models.PartsSouqPageData | None:
+    url = db.query(models.PartsSouqPageData).get(group_id)
+    return url
+
+
+def post_html_url(db: Session, new_page: schemas.CreatePartsSouqPageData):
+    # Add Diagram to DB if not already in
+    page = db.query(models.PartsSouqPageData).get(new_page.id)
+    if page is None:
+        page = models.PartsSouqPageData(
+            id=new_page.id,
+            url=new_page.url,
+            html_string=new_page.html_string,
+        )
+        db.add(page)
+    else:
+        db.query(models.PartsSouqPageData).where(
+            models.PartsSouqPageData.id == new_page.id
+        ).update({models.PartsSouqPageData.html_string: new_page.html_string})
+
+    # Commit on each loop (not ACID) to speed up dev process
     db.commit()
