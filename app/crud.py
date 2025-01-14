@@ -33,10 +33,17 @@ def wipe_groups(db: Session):
 
 
 def post_bulk_groups(db: Session, groups: List[schemas.CreateGroup]):
-    seen = set()
     for group in groups:
-        if group.id not in seen:
-            seen.add(group.id)
+        exists = db.query(models.Group).get(group.id)
+        if exists is not None:
+            db.query(models.Group).filter(models.Group.id == group.id).update(
+                {
+                    models.Group.name: group.name,
+                    models.Group.diagrams_url: group.diagrams_url,
+                    models.Group.parent_group_id: group.parent_group_id,
+                }
+            )
+        else:
             db.add(
                 models.Group(
                     id=group.id,
@@ -61,10 +68,17 @@ def wipe_diagrams(db: Session):
 
 
 def post_bulk_diagrams(db: Session, diagrams: List[schemas.CreateDiagram]):
-    seen = set()
     for diagram in diagrams:
-        if diagram.id not in seen:
-            seen.add(diagram.id)
+        exists = db.query(models.Diagram).get(diagram.id)
+        if exists is not None:
+            db.query(models.Diagram).filter(models.Diagram.id == diagram.id).update(
+                {
+                    models.Diagram.name: diagram.name,
+                    models.Diagram.img_url: diagram.img_url,
+                    models.Diagram.parent_group_id: diagram.parent_group_id,
+                }
+            )
+        else:
             db.add(
                 models.Diagram(
                     id=diagram.id,
@@ -89,10 +103,23 @@ def wipe_parts(db: Session):
 
 
 def post_bulk_parts(db: Session, parts: List[schemas.CreatePart]):
-    seen = set()
+    already_added = set()
     for part in parts:
-        if part.id not in seen:
-            seen.add(part.id)
+        exists = db.query(models.Part).get(part.id)
+
+        print(part)
+        if exists is not None and part.id not in already_added:
+            db.query(models.Part).filter(models.Part.id == part.id).update(
+                {
+                    models.Part.parent_diagram_id: part.parent_diagram_id,
+                    models.Part.number: part.number,
+                    models.Part.amount: part.amount,
+                    models.Part.note: part.note,
+                    models.Part.name: part.name,
+                    models.Part.date_range: part.date_range,
+                }
+            )
+        elif part.id not in already_added:
             db.add(
                 models.Part(
                     id=part.id,
@@ -104,4 +131,5 @@ def post_bulk_parts(db: Session, parts: List[schemas.CreatePart]):
                     date_range=part.date_range,
                 )
             )
+        already_added.add(part.id)
     db.commit()

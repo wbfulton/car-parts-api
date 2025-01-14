@@ -31,9 +31,6 @@ async def get_group(id: int, db: Session = Depends(get_db)):
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    if len(group.diagrams) == 0:
-        raise HTTPException(status_code=400, detail="Group has no diagrams")
-
     return group
 
 
@@ -41,7 +38,6 @@ async def get_group(id: int, db: Session = Depends(get_db)):
 async def scrape_all_groups(db: Session = Depends(get_db)):
     groups = await scrape_groups()
 
-    crud.wipe_groups(db)
     crud.post_bulk_groups(db, groups)
 
     return groups

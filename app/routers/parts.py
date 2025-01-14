@@ -22,6 +22,4 @@ async def get_all_parts(
 ):
     parts = crud.get_parts(db, page_length, token)
 
-    print(parts, parts[0])
-
     return parts
