@@ -51,6 +51,10 @@ class CreateDiagram(DiagramBase):
     parent_group_id: int
 
 
+class PartialDiagram(DiagramBase):
+    parts: list["PartBase"]
+
+
 class Diagram(DiagramBase):
     parts: list["Part"]
     groups: list["Group"]
@@ -71,6 +75,10 @@ class CreateGroup(GroupBase):
 
 class PartialGroup(GroupBase):
     children: List["PartialGroup"]
+
+
+class DiagramGroup(GroupBase):
+    diagrams: List["PartialDiagram"]
 
 
 class Group(GroupBase):

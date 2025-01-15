@@ -24,9 +24,9 @@ async def get_nested_groups(db: Session = Depends(get_db)):
     return groups
 
 
-@router.get("/{id}", response_model=schemas.Group)
+@router.get("/{id}", response_model=schemas.DiagramGroup)
 async def get_group(id: int, db: Session = Depends(get_db)):
-    group: schemas.Group = crud.get_group(db, id)
+    group: schemas.DiagramGroup = crud.get_group(db, id)
 
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")

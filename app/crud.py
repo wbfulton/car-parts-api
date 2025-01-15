@@ -9,14 +9,14 @@ import app.schemas as schemas
 
 
 def get_groups_nested(db: Session):
-    all_groups = db.query(models.Group).all()
-    cleaned_groups: List[models.Group] = []
-    # ORM will every group flat, and nested.
-    # We must clean this to be just nested
-    for group in all_groups:
+    groups = db.query(models.Group).all()
+
+    parent_groups: models.Group = []
+    for group in groups:
         if len(group.parents) == 0:
-            cleaned_groups.append(group)
-    return cleaned_groups
+            parent_groups.append(group)
+
+    return parent_groups
 
 
 def get_groups_flat(db: Session, page_length: int = 10, token: int = 0):
